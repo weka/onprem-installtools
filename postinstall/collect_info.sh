@@ -26,7 +26,8 @@ sudo lscpu
 sudo free
 sudo uname -a
 echo '=== IB Network ==='
-linklayer=`weka status | grep "link layer:" | awk -F: '{print $2}'`
-if [ $linklayer == "InfiniBand" ]; then ibnetdiscover; fi 
+#linklayer=`weka status | grep "link layer:" | awk -F: '{print $2}'`
+#if [ $linklayer == "InfiniBand" ]; then ibnetdiscover; fi 
+ibnetdiscover
 echo '=== Weka Config Dump ==='
 sudo weka local run -- /weka/cfgdump

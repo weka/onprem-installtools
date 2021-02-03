@@ -805,8 +805,8 @@ for hostname, host in serverinfo.hosts.items():
     # the easy stuff - same cores & memory?  Number of ip interfaces and drives?
 
     if ((reference_host.total_cores != host.total_cores) or (reference_host.usable_cores != host.usable_cores) or 
-            (int(reference_host.memory/100) != int(host.memory/100)) or 
-            (int(reference_host.usable_mem/100) != int(host.usable_mem/100)) or 
+            (int(reference_host.memory/1000) != int(host.memory/1000)) or 
+            (int(reference_host.usable_mem/1000) != int(host.usable_mem/1000)) or 
             (len( reference_host.ipifs ) != len( host.ipifs )) or (len( reference_host.drives ) != len( host.drives ))):
         is_identical = False
         print( "There appears to be a mismatch between this host and the Reference Host:" )
@@ -1185,6 +1185,9 @@ if args.verbose:
 #                del host.ipifs[name]
 
 # with what's left, what are our weka management interfaces?
+major = 0
+minor = 0
+dot = 0
 for hostname, host in sorted( cluster.hosts.items() ):
 
     # adjust for new weka versions allowing more than 2 ip interfaces
@@ -1192,6 +1195,7 @@ for hostname, host in sorted( cluster.hosts.items() ):
     #print(f"host.wekaversion={host.wekaversion}")
     major = int(temp[0])
     minor = int(temp[1])
+    minor = int(temp[2])
     if major >= 3 and minor >= 10:
         max_ip_interfaces = 8
     else:
@@ -1291,19 +1295,34 @@ for hostname, host in sorted( cluster.hosts.items() ):
 
 # do we need to add "--host-ips=" ?
 hostips = "--host-ips="
+fix_hostips = {}
+
+if major ==3 and minor == 10 and dot == 0:
+    fix_3_10_0_bug = True
+    for hostname, host in sorted( cluster.hosts.items() ):
+        if len(host.weka_mgmt_ip) <= 2:	# will the bug affect us?
+            fix_3_10_0_bug = False # 2 or less ips, but does not affect this config
+else:
+    fix_3_10_0_bug = False
 
 for hostname, host in sorted( cluster.hosts.items() ):
     if len( host.weka_mgmt_ip ) < 2:
         thishost_ips =  host.weka_mgmt_ip[0]
     else:
         thishost_ips = None
+        ipcount = 0
         for ip in host.weka_mgmt_ip:
+            ipcount += 1
             if thishost_ips == None:
                 thishost_ips = ip
             else:
-                thishost_ips += '+' + ip
-        #thishost_ips = host.weka_mgmt_ip[0] + "+" + host.weka_mgmt_ip[1]    # HA config
+                if ipcount <= 2:  # 3.10.0 can only have 2 ips here - have to fix later
+                    thishost_ips += '+' + ip         # only save first 2
+                elif not fix_3_10_0_bug:
+                    thishost_ips += '+' + ip
+
     hostips = hostips + thishost_ips + ","
+
 # remove trailing "," and add it to the command
 cmd.append( hostips[:-1] )
 
@@ -1329,6 +1348,16 @@ cmd=["weka", "cluster", "update", "--cluster-name=" + cluster.name]
 if not write_output( cmd ):
     sys.exit( "I/O error on output" )
 
+if fix_3_10_0_bug:
+    for hostname, host in sorted( cluster.hosts.items() ):
+        cmd=["weka", "cluster", "host", "management-ips", str(host.hostid)]
+        for ip in host.weka_mgmt_ip:
+            cmd.append(ip)
+
+        # occasionally, some hosts aren't ready for this yet, so retry it a few times
+        if not write_output( cmd ):
+            sys.exit( "I/O error on output" )
+
 #
 # add network interfaces
 #
@@ -1337,7 +1366,7 @@ for hostname, host in sorted( cluster.hosts.items() ):
     for interface, ipobj in sorted( host.ipifs.items() ):
         #if host.num_vf_interfaces == 0 and ipobj.ipaddr == host.mgmt_ip:     # only aws instances don't have vf interfaces!
         #    continue                                                        # don't give the management interface to the dataplane
-        cmd=["weka", "cluster","host", "net", "add", str(host.hostid), interface]
+        cmd=["weka", "cluster", "host", "net", "add", str(host.hostid), interface]
         if ipobj.netmask != None:
             cmd.append( "--netmask=" + str(ipobj.netmask) )
 
@@ -1399,7 +1428,10 @@ else:
     
 #weka cloud enable
 if cluster.cloudenable:
-    cmd = ["weka", "cloud", "enable"]
+    if major >= 3 and minor >=10:
+        cmd = ["weka", "cloud", "enable", "--cloud-stats", "on"]
+    else:
+        cmd = ["weka", "cloud", "enable"]
     if not write_output( cmd ):
         sys.exit( "I/O error on output" )
 
