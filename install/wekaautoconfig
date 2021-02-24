@@ -1195,7 +1195,7 @@ for hostname, host in sorted( cluster.hosts.items() ):
     #print(f"host.wekaversion={host.wekaversion}")
     major = int(temp[0])
     minor = int(temp[1])
-    minor = int(temp[2])
+    dot = int(temp[2])
     if major >= 3 and minor >= 10:
         max_ip_interfaces = 8
     else:
